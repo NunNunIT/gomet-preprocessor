@@ -14,12 +14,12 @@
     },
     "exts": ["air_conditioning"],
     "openHour": {
-      "monday": ["08:00 - 22:00\n"],
-      "tuesday": ["08:00 - 22:00\n"],
-      "wednesday": ["08:00 - 22:00\n"],
-      "thursday": ["08:00 - 22:00\n"],
-      "friday": ["08:00 - 22:00\n"],
-      "saturday": ["08:00 - 22:00\n"],
+      "monday": ["08:00 - 22:00"],
+      "tuesday": ["08:00 - 22:00"],
+      "wednesday": ["08:00 - 22:00"],
+      "thursday": ["08:00 - 22:00"],
+      "friday": ["08:00 - 22:00"],
+      "saturday": ["08:00 - 22:00"],
       "sunday": ["08:00 - 22:00"]
     },
     "imgs": [

@@ -1,7 +1,12 @@
 
 Flask
 gunicorn
-panda
+pandas
+requests
+beautifulsoup4
+selenium
+webdriver_manager
+scrapy
 # langchain
 # langchain-community
 # langchain-core

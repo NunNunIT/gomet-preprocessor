@@ -1,34 +1,29 @@
-# preprocessor/thodiamomo_json.py
 import pandas as pd
 import re
-import json
 
 def process_momo(input_path, output_path):
-    # Đọc dữ liệu từ file JSON
-    with open(input_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    momo = pd.DataFrame(data)
+    # Đọc file JSON
+    momo = pd.read_json(input_path, orient='records')
 
     # Đổi tên các cột
     momo = momo.rename(columns={
-        'tinh': 'province',
-        'qh': 'district',
-        'px': 'ward',
-        'services': 'exts',
-        'open_hour': 'openHour',
         'rating': 'avgRating',
         'count_comments': 'ratingCount',
-        'review1': 'post1',
-        'review2': 'post2',
-        'review3': 'post3',
-        'review4': 'post4',
-        'review5': 'post5',
-        'phone_numbers': 'phones'
+        'phone_numbers': 'phones',
+        'services': 'exts',
+        'open_hour': 'openHour'
     })
 
-    # Tạo cột imgs
+    # Tạo cột imgs từ Image1 đến Image12
     image_columns = [f'Image{i}' for i in range(1, 13)]
-    momo['imgs'] = momo[image_columns].values.tolist()
+    # Đảm bảo các cột Image tồn tại, nếu không thì tạo cột rỗng
+    for col in image_columns:
+        if col not in momo.columns:
+            momo[col] = ''
+    # Tạo cột imgs bằng cách gộp các giá trị từ Image1 đến Image12
+    momo['imgs'] = momo[image_columns].apply(
+        lambda row: [img for img in row if pd.notna(img) and img != ''], axis=1
+    )
     momo = momo.drop(columns=image_columns)
 
     # Chuyển đổi openHour
@@ -43,12 +38,12 @@ def process_momo(input_path, output_path):
     }
 
     def convert_open_hour(open_hour_str):
-        if pd.isna(open_hour_str):
+        if pd.isna(open_hour_str) or not open_hour_str:
             return {v: [] for v in day_mapping.values()}
         open_hour_dict = {v: [] for v in day_mapping.values()}
-        entries = str(open_hour_str).split('; ')
+        entries = open_hour_str.split('; ')
         for entry in entries:
-            if ',' in entry:
+            if entry and ',' in entry:
                 day_part, time_part = entry.split(', ', 1)
                 day_part = day_part.strip().lower()
                 time_part = time_part.replace(' đến ', ' - ')
@@ -60,44 +55,47 @@ def process_momo(input_path, output_path):
     momo['openHour'] = momo['openHour'].apply(convert_open_hour)
 
     # Chuyển đổi exts
-    momo['exts'] = momo['exts'].apply(lambda x: x.split(';') if pd.notna(x) else [])
-
-    # Xóa cột trùng lặp
-    momo = momo.loc[:, ~momo.columns.duplicated()]
-
-    # Xử lý imgs
-    momo['imgs'] = momo['imgs'].apply(lambda x: [img for img in x if pd.notna(img)] if isinstance(x, list) else [])
-
-    # Tạo address
-    def create_address(row):
-        return {
-            'province': row['province'] if pd.notna(row['province']) else '',
-            'district': row['district'] if pd.notna(row['district']) else '',
-            'ward': row['ward'] if pd.notna(row['ward']) else '',
-            'street': row['street'] if pd.notna(row['street']) else ''
-        }
-
-    momo['address'] = momo.apply(create_address, axis=1)
-    momo = momo.drop(columns=['ward', 'district', 'street', 'province'])
-    momo['type'] = ''
+    momo['exts'] = momo['exts'].apply(lambda x: x.split(';') if pd.notna(x) and x else [])
 
     # Chuyển đổi categories
-    momo['categories'] = momo['categories'].apply(lambda x: x.split('-') if pd.notna(x) else [])
+    momo['categories'] = momo['categories'].apply(lambda x: x.split('-') if pd.notna(x) and x else [])
 
     # Xử lý price
     def extract_price(price_str):
-        if pd.isna(price_str):
+        if pd.isna(price_str) or not price_str:
             return 0
         try:
-            return int(price_str.split('đ')[0].replace('.', '').strip())
+            return int(price_str.split('đ')[0].replace('.', '').replace(' ', '').split('/')[0])
         except:
             return 0
 
     momo['price'] = momo['price'].apply(extract_price)
 
-    # Trích xuất tọa độ
+    # Xử lý address
+    def parse_address(address_str):
+        if pd.isna(address_str) or not address_str:
+            return {'province': '', 'district': '', 'ward': '', 'street': ''}
+        parts = address_str.split(', ')
+        if len(parts) >= 4:
+            street = parts[0]
+            ward = parts[1]
+            district = parts[2]
+            province = parts[3]
+        else:
+            street = address_str
+            ward = district = province = ''
+        return {
+            'province': province,
+            'district': district,
+            'ward': ward,
+            'street': street
+        }
+
+    momo['address'] = momo['address'].apply(parse_address)
+
+    # Trích xuất tọa độ từ url_address
     def extract_coordinates(url):
-        if pd.isna(url):
+        if pd.isna(url) or not url:
             return {'long': '', 'lat': ''}
         match = re.search(r'query=([-+]?\d*\.\d+),([-+]?\d*\.\d+)', url)
         if match:
@@ -108,15 +106,19 @@ def process_momo(input_path, output_path):
 
     momo['locate'] = momo['url_address'].apply(extract_coordinates)
 
-    # Bỏ cột không cần thiết
-    columns_to_drop = ['url_address', 'logo_avt', 'avt_ImageURL', 'avt_Image_URL_backup', 'post1', 'post2', 'post3', 'post4', 'post5']
+    # Xử lý phones
+    momo['phones'] = momo['phones'].apply(lambda x: [str(x)] if pd.notna(x) else [''])
+
+    # Thêm cột type
+    momo['type'] = momo['type'] if 'type' in momo.columns else ['family_meal']
+
+    # Bỏ các cột không cần thiết
+    columns_to_drop = ['url_address', 'logo_avt', 'avt_ImageURL', 'avt_Image_URL_backup', 'review1', 'review2', 'review3', 'review4', 'review5']
     momo = momo.drop(columns=[col for col in columns_to_drop if col in momo.columns])
 
-    # Xử lý phones
-    momo['phones'] = momo['phones'].apply(lambda x: [str(x)] if pd.notna(x) else [])
+    # Xóa cột trùng lặp
+    momo = momo.loc[:, ~momo.columns.duplicated()]
 
-    # Lưu dữ liệu ra file JSON
-    momo.to_json(output_path, orient='records', force_ascii=False, indent=2)
+    # Lưu file JSON
+    momo.to_json(output_path, orient='records', force_ascii=False, indent=4)
     return output_path
-
-process_momo("C:\DATA\gomet-preprocessor\preprocessor\ThoDiaMoMo_Version2.json", "file_output.json")
